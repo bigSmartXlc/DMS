@@ -1,0 +1,546 @@
+// 主题色
+// 蓝色$themeblue
+// 红色$themered
+
+
+// 颜色变量
+$red: #E70020;
+$blue:#0077ff;
+$pink:#e58581;
+$green:#1fab7f;
+$violet:#9264d1;
+$orange:#FEA91D;
+
+
+$redhover: #e95267;
+$bluehover:#4e9ffb;
+$pinkhover:#f79c98;
+$greenhover:#24c894;
+$violethover:#af79f9;
+$orangehover:#FFC059;
+
+$redopacity: #f7e2e5;
+$blueopacity:#d8e9fb;
+$pinkopacity:#f5ebea;
+$greenopacity:#e3fdf5;
+$violetopacity:#ebe4f5;
+$orangeopacity:#FFF3DF;
+
+$reddark: #5b151e;
+$bluedark:#153c67;
+$pinkdark:#6f1008;
+$greendark:#0d7657;
+$violetdark:#400f85;
+$orangedark:#774A00;
+
+$whilt:#fff;
+$gainsboro:#eee;
+$silver:#ccc;
+$darkGray:#D8D8D8;
+$dimGray:#353535;
+$black:#000;
+$WhiteSmoke:#484848;
+$lightGray:#F1F1F1;
+$backGray:#C8C8C8;
+$lbGray:#F2F2F2;
+$silvery:#cbd2d6;
+$gray:#E8E8E8;
+$Lightash:#b9b9b9;
+
+// 字体变量
+$fontColor333 : #333;
+$fontColor666 : #666;
+$fontColor999 : #999;
+$fontColorBlack:$black;
+
+/* 高度 */
+
+//提交正确提示效果
+$truemessageColor:$blue;
+
+//边框变量
+$borderColor:$silver;
+$bottom-borderColor:$WhiteSmoke;
+
+//图标变量
+$iconColor:$silver;
+
+//背景变量
+$button-bgColor:$gainsboro;
+$tags-bgColor:$darkGray;
+$menu-bgColor:$dimGray;
+$logo-bgColor:$red; // $black
+$main-bgColor:$lightGray;
+$popus-bgColor:$backGray;
+$popuslight-bgColor:$lbGray;
+
+// 主题色变量;
+$themeColor:$red;
+
+//抛出主题集合色
+:export {
+  red: $red;
+  pink: $pink;
+  blue: $blue;
+  green: $green;
+  violet: $violet;
+  silvery: $orange;
+  fontColor333: $fontColor333;
+}
+
+// 主题集合
+$red-theme : (theme-color:$red, hover-color:$redhover, opacity-color:$redopacity, fontColor:$whilt, dark-color:$reddark);
+$blue-theme : (theme-color:$blue, hover-color:$bluehover, opacity-color:$blueopacity, fontColor:$whilt, dark-color:$bluedark);
+$pink-theme : (theme-color:$pink, hover-color:$pinkhover, opacity-color:$pinkopacity, fontColor:$whilt, dark-color:$pinkdark);
+$green-theme : (theme-color:$green, hover-color:$greenhover, opacity-color:$greenopacity, fontColor:$whilt, dark-color:$greendark);
+$violet-theme : (theme-color:$violet, hover-color:$violethover, opacity-color:$violetopacity, fontColor:$whilt, dark-color:$violetdark);
+$whilt-theme : (theme-color: $orange, hover-color:$orangehover, opacity-color:$orangeopacity, fontColor:$whilt, dark-color:$orangedark);
+//定义映射集合
+$themes: (red-theme: $red-theme,
+  pink-theme: $pink-theme,
+  blue-theme: $blue-theme,
+  green-theme: $green-theme,
+  violet-theme: $violet-theme,
+  silvery-theme: $whilt-theme);
+
+// @include base-themeColor(border-color);四边边框颜色
+// @include base-themeColor(background-color);背景颜色
+// @include base-themeColor(color);字体颜色
+// @include base-themeColor(border-top-color);顶部边框颜色
+// @include base-themeColor(border-left-color);左边边框颜色
+// @include base-themeColor(border-rihght-color);右边边框颜色
+// @include base-themeColor(border-bottom-color);底部边框颜色
+@mixin base-themeColor($themeType:null, $important:null, $type:null) {
+
+  //$themeType：背景色/边框色/文字颜色  ；$important：！important ; $type hover鼠标滑入效果  opacity透明效果  load加载效果 dark深色背景
+  @each $themename,
+  $theme in $themes {
+    [data-theme='#{$themename}'] & {
+      @if $type==hover {
+        #{$themeType}: map-get($map: $theme, $key: hover-color)$important;
+      }
+
+      @else if $type==opacity {
+        #{$themeType}: map-get($map: $theme, $key: opacity-color)$important;
+      }
+
+      @else if $type==load {
+        stroke: map-get($map: $theme, $key: theme-color)$important;
+      }
+
+      @else if $type==dark {
+        stroke: map-get($map: $theme, $key: dark-color)$important;
+      }
+
+      @else {
+        #{$themeType}: map-get($map: $theme, $key: theme-color)$important;
+      }
+    }
+  }
+}
+
+// 整站组件皮肤
+//弹窗关闭按钮
+.el-dialog__headerbtn:focus .el-dialog__close,
+.el-dialog__headerbtn:hover .el-dialog__close {
+  @include base-themeColor(color,  !important);
+}
+
+//主菜单皮肤
+#sideBar {
+
+  a.router-link-exact-active.router-link-active,
+  li.el-submenu.is-active.is-opened {
+    @include base-themeColor(border-left-color,  !important);
+  }
+
+  .is-active>.el-submenu__title,
+  .menu-wrapper .is-active i,
+  .el-menu--vertical .nest-menu .el-submenu>.el-submenu__title:hover {
+    @include base-themeColor(color,  !important);
+  }
+
+  .menu-wrapper li>.el-submenu__title,
+  .menu-wrapper a>.el-menu-item {
+    height: 20px !important;
+    line-height: 14px !important;
+  }
+
+}
+
+.el-image-viewer__next,
+.el-image-viewer__prev {
+  @include base-themeColor(background-color);
+
+  i {
+    color: #fff;
+  }
+}
+
+.el-image-viewer__close {
+  @include base-themeColor(color);
+}
+
+//横导航
+#navbar,
+#menu-navbar {
+  @include base-themeColor(background-color);
+
+  .organization,
+  .lang,
+  .my-upcoming .icon-remind_fill,
+  .right-menu .avatar-container,
+  .el-button:focus,
+  .el-button:hover,
+  .button-theme button,
+  .button-theme button:hover {
+    color: $whilt;
+  }
+}
+
+.el-select .el-tag {
+  height: 23px;
+  line-height: 23px;
+}
+
+//表单
+.el-select .el-input.is-focus .el-input__inner,
+.el-select .el-input__inner:focus,
+.el-input__inner:focus,
+.el-checkbox__inner:hover,
+.el-checkbox__input.is-focus .el-checkbox__inner,
+// .el-message--success,  // tosta提示框边框修改
+.el-radio__inner:hover {
+  @include base-themeColor(border-color,  !important);
+}
+
+.el-dropdown-menu__item:not(.is-disabled):hover,
+// .el-loading-spinner .el-loading-text,
+// .el-message--success .el-message__content,    // tosta提示框文字
+.el-select-dropdown__item.selected {
+  @include base-themeColor(color,  !important);
+}
+
+.el-select-dropdown__item.hover,
+.el-select-dropdown__item:hover {
+  @include base-themeColor(background-color,  !important, opacity);
+}
+
+.el-checkbox__input.is-checked .el-checkbox__inner,
+.el-checkbox__input.is-indeterminate .el-checkbox__inner {
+  @include base-themeColor(background-color,  !important);
+  @include base-themeColor(border-color,  !important);
+}
+
+.el-radio__input.is-checked .el-radio__inner {
+  @include base-themeColor(background-color,  !important);
+  @include base-themeColor(border-color,  !important);
+  color: $whilt;
+}
+
+.el-radio__input.is-checked+.el-radio__label,
+.el-date-table td.today span,
+.el-date-table td.available:hover,
+.el-picker-panel__icon-btn:hover,
+.el-date-picker__header-label.active,
+.el-date-picker__header-label:hover {
+  @include base-themeColor(color,  !important);
+}
+
+.el-date-table td.today.end-date span,
+.el-date-table td.today.start-date span {
+  color: $whilt !important;
+}
+
+.el-date-table td.current:not(.disabled) span {
+  @include base-themeColor(background-color,  !important);
+  color: $whilt !important;
+}
+
+.el-textarea__inner:focus,
+.el-form-item.is-error .el-input__inner,
+.el-form-item.is-error .el-input__inner:focus,
+.el-form-item.is-error .el-textarea__inner,
+.el-form-item.is-error .el-textarea__inner:focus {
+  @include base-themeColor(border-color);
+}
+
+
+//按钮
+.mixButton .el-input-group__append:hover,
+.mixButton .el-input-group__prepend:hover {
+  @include base-themeColor(background-color,  !important, hover);
+}
+
+
+
+button.el-button.el-button--danger.el-button--small {
+  @include base-themeColor(background-color,  !important, hover);
+  @include base-themeColor(border-color,  !important);
+  color: $whilt;
+}
+
+button.el-button.el-button--danger.el-button--small:hover,
+.el-button--danger.is-plain {
+  color: $whilt;
+  @include base-themeColor(background-color,  !important);
+}
+
+button.el-button.moreParam.el-button--danger.el-button--small {
+  background: $whilt !important;
+  border: $whilt !important;
+  color: $fontColor333 !important;
+}
+
+button.el-button.moreParam.el-button--danger.el-button--small:hover,
+.el-button--danger.is-plain {
+  background: $whilt !important;
+  border: $whilt !important;
+  @include base-themeColor(color,  !important);
+}
+
+.mixButton,
+.depButton {
+  .el-dropdown-link {
+    @include base-themeColor(color,  !important);
+  }
+}
+
+.el-button--primary,
+.el-button--primary.is-active,
+.el-button--primary:active {
+  color: $whilt !important;
+  @include base-themeColor(background-color,  !important, );
+  @include base-themeColor(border-color);
+}
+
+.el-button--primary:focus,
+.el-button--primary:hover {
+  color: $whilt !important;
+  @include base-themeColor(background-color,  !important, hover);
+  @include base-themeColor(border-color);
+}
+
+.el-button--primary-crm,
+.el-button--primary-crm.is-active,
+.el-button--primary-crm:active {
+  @include base-themeColor(color,  !important, );
+  @include base-themeColor(border-color);
+}
+
+//多选按钮样式随主题变化调整
+.selectedClass-crmFactSysConf-crm {
+  position: relative;
+  @include base-themeColor(color,  !important, );
+  border: 1px solid $themeColor;
+  @include base-themeColor(border-color,  !important);
+}
+
+.selectedClass-i-crmFactSysConf-crm {
+  position: absolute;
+  border-bottom: 12.4px solid $themeColor;
+  border-left: 1.3rem solid transparent;
+  @include base-themeColor(border-bottom-color,  !important);
+  width: 0px;
+  height: 0px;
+  bottom: 0rem;
+  right: -1px;
+}
+
+.disableClass-crmFactSysConf-crm {
+  @include base-themeColor(color,  !important);
+  background-color: #fff;
+}
+
+.disableClass-crmFactSysConf-crm:hover {
+  cursor: default !important;
+  @include base-themeColor(color,  !important);
+  background-color: #fff !important;
+}
+
+.effective-clue-crm .w68 span:hover {
+  border: 1px solid $themeColor;
+  @include base-themeColor(border-color,  !important);
+  cursor: pointer;
+}
+
+//---多选按钮样式随主题变化调整---
+
+// 面包屑鼠标经过
+.app-breadcrumb.el-breadcrumb .el-breadcrumb__inner:hover,
+.el-cascader-node.is-active,
+.el-cascader-node.in-active-path {
+  @include base-themeColor(color,  !important);
+}
+
+.el-date-table td.end-date span,
+.el-date-table td.start-date span {
+  @include base-themeColor(background-color,  !important);
+}
+
+#app .hideSidebar .sidebar-container .menu-wrapper .is-active {
+  @include base-themeColor(border-left-color,  !important);
+}
+
+//网格
+.el-table--striped .el-table__body tr.el-table__row--striped.current-row td,
+.el-table__body tr.current-row>td {
+  @include base-themeColor(background-color,  !important, opacity);
+}
+
+.el-table__body tr.hover-row.current-row>td,
+.el-table__body tr.hover-row.el-table__row--striped.current-row>td,
+.el-table__body tr.hover-row.el-table__row--striped>td,
+.el-table__body tr.hover-row>td {
+  background-color: $lightGray;
+}
+
+.el-table__body tr.hover-row.el-table__row--striped>td,
+.el-table__body tr.hover-row>td {
+  // border-top: 0.1px solid;
+  border-bottom-color: $silver;
+  border-top-color: $silver;
+}
+
+.el-table__body tr.hover-row>td:first-child {
+  border-left: 0.1px solid;
+  border-left-color: $silver;
+}
+
+.el-table__body tr.hover-row>td:nth-last-child(1) {
+  border-right: 0.1px solid;
+  border-right-color: $silver;
+}
+
+.el-checkbox__input.is-checked+.el-checkbox__label {
+  @include base-themeColor(color,  !important);
+}
+
+.el-table__body .el-table__row.current-row>td {
+  border-top: 0.1px solid;
+  @include base-themeColor(border-bottom-color,  !important);
+  @include base-themeColor(border-top-color,  !important);
+}
+
+.el-table__body .el-table__row.current-row>td:first-child {
+  border-left: 0.1px solid;
+  @include base-themeColor(border-left-color,  !important);
+}
+
+
+.el-table__body .el-table__row.current-row>td:nth-last-child(1) {
+  border-right: 0.1px solid;
+  @include base-themeColor(border-right-color,  !important);
+}
+
+// .el-loading-spinner .path {
+//     @include base-themeColor(null,  !important, load);
+// }
+
+//弹窗网格
+.el-table a {
+  @include base-themeColor(color,  !important);
+}
+
+//CRM
+.filter-title-crm {
+  ::before {
+    @include base-themeColor(color,  !important);
+  }
+
+  @include base-themeColor(color,  !important);
+}
+
+//CRM- 网格左右滚动按钮
+// .crm-page-leftScrollButton-click,
+// .crm-page-rightScrollButton-click {
+//     @include base-themeColor(background-color,  !important, opacity);
+// }
+
+.crm-page-leftScrollButton-click:hover,
+.crm-page-rightScrollButton-click:hover {
+  @include base-themeColor(background-color,  !important);
+}
+
+//  CRM -图片管理
+.crm-imageManageNm-imglist .picName {
+  @include base-themeColor(color,  !important);
+}
+
+.crm-imageManageNm-warn {
+  @include base-themeColor(color,  !important, opacity);
+}
+
+// CRM新增登记，迎宾
+.filter-params-crm-scroll .el-tabs__header .el-tabs__item.is-active,
+.filter-params-crmtab .el-tabs__header .el-tabs__item.is-active {
+  @include base-themeColor(border-bottom-color,  !important);
+  border-top: 0 !important;
+  border-bottom: 2px solid !important;
+}
+
+.filter-params-crm .el-radio-button__orig-radio:checked+.el-radio-button__inner,
+.filter-title-crm-tag .el-radio-button__orig-radio:checked+.el-radio-button__inner {
+  //来店人数、来店目的、销售顾问选中颜色跟随主题颜色
+  @include base-themeColor(background-color,  !important);
+  @include base-themeColor(border-color,  !important);
+}
+
+.filter-params-crm .el-radio-button__inner:hover,
+.filter-title-crm-tag .el-radio-button__inner:hover {
+  //来店人数、来店目的、销售顾问经过颜色跟随主题颜色
+  @include base-themeColor(background-color,  !important);
+  @include base-themeColor(border-color,  !important);
+  color: white
+}
+
+.filter-params-crmtab .el-checkbox-button.is-checked .el-checkbox-button__inner,
+.filter-title-crm-tag .el-checkbox-button.is-checked .el-checkbox-button__inner {
+  //意向车系选中颜色跟随主题颜色
+  @include base-themeColor(background-color,  !important);
+  @include base-themeColor(border-color,  !important);
+}
+
+.filter-params-crmtab .el-checkbox-button__inner:hover,
+.filter-title-crm-tag .el-checkbox-button__inner:hover {
+  //意向车系经过颜色跟随主题颜色
+  @include base-themeColor(background-color,  !important);
+  @include base-themeColor(border-color,  !important);
+  color: white
+}
+
+.filter-params-crm .el-tag,
+.filter-params-crmtab .el-tag {
+  @include base-themeColor(color,  !important);
+  @include base-themeColor(background-color,  !important, opacity);
+}
+
+.filter-params-crm .el-tag .el-tag__close:hover,
+.filter-params-crmtab .el-tag .el-tag__close:hover {
+  @include base-themeColor(background-color,  !important);
+}
+
+.filter-params-crm .el-tag .el-tag__close,
+.filter-params-crmtab .el-tag .el-tag__close,
+.filter-title-crm-tag .el-tag .el-tag__close {
+  @include base-themeColor(color,  !important, opacity);
+  @include base-themeColor(background-color,  !important);
+}
+
+// .filter-params-crmtab .el-checkbox-button__inner:hover,.filter-params-crm .el-checkbox-button__inner:hover{
+//     @include base-themeColor(color,  !important);
+// }
+//网格列特殊按钮
+button.el-button.el-button--danger.el-button--small.red-danger {
+  background-color: $red !important;
+  border-color: $red !important;
+}
+
+button.el-button.el-button--danger.el-button--small.green-danger {
+  background-color: $green !important;
+  border-color: $green !important;
+}
+
+.isHorCom {
+  @include base-themeColor(background-color);
+}

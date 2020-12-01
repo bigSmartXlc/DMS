@@ -1,0 +1,59 @@
+//  description: 全局高度尺寸、主菜单样式变量
+//  author: liyanm
+//  createdDate: 2019-08-02
+
+
+
+@import './theme.scss'; //引入皮肤变量
+
+
+// sidebar颜色
+$menuText:$fontColor333; //导航字体颜色
+$menuActiveText:$red; //导航当前激活菜单的文字颜色
+$menuBg:$gray; // 导航菜单的背景色
+$menuHover:$Lightash; // 导航菜单移入
+$subMenuBg:$gray; // 折叠菜单背景
+$subMenuHover:$Lightash; // 折叠菜单移入
+
+
+// sidebar尺寸
+$sideBarWidth: 210px; //侧导航展开宽度
+$navbarHeight: 26px; //一级横导航导航、菜单menu，nave行高、高度
+$sideBarHeightMenu: 26px; //二级或以下横导航导航、菜单menu，nave行高、高度
+// 面包屑高度
+$breadcrumbHeight: 26px;
+// 组件高度
+$inputCompHeight: 24px;
+// 网格高度
+$tableRowHeight: 22px;
+// 查询条件单行高度（组件行高度+margin）
+$queryLineHeight: 29px;
+// 页面区域高度 = 查询条件单行高度 * 行数
+$pageAreaHeight: 29px;
+// 内容页面整体样式（100% - 面包屑高度）
+$appContainerHeight: calc(100% - 26px);
+// Logo块高度=导航栏高度
+$sideBarLogoHeight: $navbarHeight;
+// tags-view（已打开页面标签）高度
+$tagsViewHeight: 20px;
+// AppMain高度 = 100vh - 导航栏高度 - tags-view高度 - margin(10)
+//#{$navbarHeight}+#{$tagsViewHeight}-10+2;//
+$appMainHeight: calc(100vh - 54px);
+// iframe高度（100% - 面包屑高度 - 10(margin-top)）
+$iframePageHeight: calc(100% - 36px);
+
+// the :export directive is the magic sauce for webpack
+// https://www.bluematador.com/blog/how-to-share-variables-between-js-and-sass
+:export {
+  menuText: $menuText;
+  menuActiveText: $menuActiveText;
+  menuBg: $menuBg;
+  menuHover: $menuHover;
+  subMenuBg: $subMenuBg;
+  subMenuHover: $subMenuHover;
+  sideBarWidth: $sideBarWidth;
+  sideBarHeightMenu: $sideBarHeightMenu;
+  breadcrumbHeight: $breadcrumbHeight;
+  queryLineHeight: $queryLineHeight;
+  pageAreaHeight: $pageAreaHeight;
+}

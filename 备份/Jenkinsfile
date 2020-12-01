@@ -1,0 +1,925 @@
+node {
+	def buildPath = pwd()
+	def jobName = "${env.JOB_NAME}"
+	def jobOutPath = "${env.JENKINS_HOME}/../mp/${env.JOB_NAME}"
+	
+	def projectId = readFile "${jobOutPath}/project_id.txt"
+	
+	def fullBinaryPath = "${env.JENKINS_HOME}/../mp/${env.JOB_NAME}/${projectId}/fullbinary"
+	def fullBinaryRollbackPath = "${env.JENKINS_HOME}/../mp/${env.JOB_NAME}/${projectId}/fullbinaryrollback"
+	def fullSourcePath = "${env.JENKINS_HOME}/../mp/${env.JOB_NAME}/${projectId}/fullsource"
+	def jobSourcePath = "${env.JENKINS_HOME}/jobs/${env.JOB_NAME}/workspace@script"
+	def dockerImagePath = "${env.JENKINS_HOME}/../mp/${env.JOB_NAME}/${projectId}/dockerimage"
+	def incrementBinaryPath = "${env.JENKINS_HOME}/../mp/${env.JOB_NAME}/${projectId}/incrementbinary"
+	def incrementSourcePath = "${env.JENKINS_HOME}/../mp/${env.JOB_NAME}/${projectId}/incrementsource"
+	def changeLogPath = "${env.JENKINS_HOME}/jobs/${env.JOB_NAME}/builds"
+	echo "buildPath: ${buildPath}"
+	
+	// 得到构建步骤选项
+	def stepSvn
+	def stepSonar
+	def stepTest
+	def stepBuild
+	def stepDeploy
+	
+	// 构建的最后步骤
+	def lastStep
+	
+	// 语言
+	def lang;
+	try {
+		def stepOptions = readFile "${jobOutPath}/build_steps.txt"
+		def stepArr = stepOptions.split(",")
+		
+		stepSvn = stepArr[0];
+		stepSonar = stepArr[1];
+		stepTest = stepArr[2];
+		stepBuild = stepArr[3];
+		stepDeploy = stepArr[4];
+		
+		if (stepDeploy == '1') {
+			lastStep = "deploy"
+		} else if (stepBuild == '1') {
+			lastStep = "build"
+		} else if (stepTest == '1') {
+			lastStep = "test"
+		} else if (stepSonar == '1') {
+			lastStep = "sonar"
+		} else {
+			lastStep = "svn"
+		}
+		
+		def projectInfo = readFile "${jobOutPath}/project_info.txt"
+		def projectArr = projectInfo.split(";")
+		lang = projectArr[1];
+    } catch (ex) {
+        echo "读取构建步骤选项出错, ${ex}"
+        writeError("${jobOutPath}", '读取构建步骤选项', "${ex}")
+        
+        throw ex
+    } 
+    
+    echo "build steps: ${steps}, lastStep = ${lastStep}"
+    
+    // 构建前处理
+    beforeBuild(jobOutPath, fullBinaryPath, fullBinaryRollbackPath)
+	
+	if (stepSvn == '1') {
+		try {
+			stage 'SVN拉取源码'
+			echo '开始拉取源码'
+			sh "printf 1 > ${jobOutPath}/building_status.txt"
+	    	checkout scm
+	    	
+	    	// 如果是html, 将源码打成zip包
+	    	withEnv([
+	    		"buildPath=${buildPath}",
+				"jobName=$jobName",
+				"jobOutPath=${jobOutPath}",
+				"fullBinaryPath=${fullBinaryPath}",
+				]) {
+			sh '''
+			
+	    	if [ -f "$jobOutPath/project_info.txt" ]; then
+				projectConf=`cat $jobOutPath/project_info.txt`
+				OLD_IFS="$IFS" 
+				IFS=";" 
+				arr=($projectConf) 
+				IFS="$OLD_IFS"
+				lang=${arr[1]}
+				echo "lang = $lang "
+				if [ "$lang" = "html" ]; then
+					# 创建全量程序目录
+					mkdir -p "$fullBinaryPath" 
+					
+					if cd $fullBinaryPath ; then
+					    rm -rf *
+					    echo "生成全量程序包: $fullBinaryPath "
+					    
+					    cd $buildPath
+						zip -qr $fullBinaryPath/$jobName.zip . -x *.svn*
+					else
+					    echo "更改全量程序包目录失败! " 1>&2
+					    exit 1
+					fi
+				fi
+			fi
+			
+			'''
+			} // withEnv
+	    	
+	    	afterSuccess('svn', lastStep, jobOutPath, fullBinaryPath 
+	    		, incrementBinaryPath, fullBinaryRollbackPath)
+	    } catch (ex) {
+	        echo "拉取源码失败, ${ex}"
+			sendFailNotify("${jobOutPath}", "${ex}")
+	        writeError("${jobOutPath}", 'SVN拉取源码', "${ex}")
+			
+	        throw ex
+	    } finally {
+			// 清理构建
+			cleanBuild('svn', lastStep, jobOutPath, buildPath)
+		}
+	} // if
+    
+	if (stepSonar == '1') {
+		try {
+			stage '源码分析'
+			echo '开始源码分析'
+			sh "printf 4 > ${jobOutPath}/building_status.txt"
+			def projectName = jobName
+			
+			withEnv([
+				"projectName=${projectName}",
+				"buildPath=${buildPath}",
+				"jobOutPath=${jobOutPath}",
+				]) {
+			sh '''
+			
+			if [ -f "$jobOutPath/sonar_info.txt" ]; then
+				sonarInfo=`cat $jobOutPath/sonar_info.txt`
+				echo "sonarInfo: $sonarInfo"
+				cd $jobOutPath
+				sonarInfo="$sonarInfo&randomId=$RANDOM"
+				wget -T 3600 -O syncsonar_result.txt $sonarInfo
+				
+				echo '开始扫描源码 '
+				cd $buildPath
+				echo "SONAR_SCANNER_HOME: $SONAR_SCANNER_HOME "
+				$SONAR_SCANNER_HOME/bin/sonar-scanner -Dsonar.projectKey=szlanyou:${projectName} \
+					-Dsonar.projectName=${projectName}  -Dsonar.scm.disabled=true
+			fi
+			
+			'''
+			} // withEnv
+			
+			afterSuccess('sonar', lastStep, jobOutPath, fullBinaryPath 
+				, incrementBinaryPath, fullBinaryRollbackPath)
+		 } catch (ex) {
+	        echo "源码分析出错, ${ex}"
+	        sendFailNotify("${jobOutPath}", "${ex}")
+	        writeError("${jobOutPath}", '源码分析', "${ex}")
+	        
+	        throw ex
+	    } finally {
+			// 清理构建
+			cleanBuild('sonar', lastStep, jobOutPath, buildPath)
+		}
+	} // if
+    
+	if (stepTest == '1' && lang == 'java') {
+	    try {
+			stage '单元测试'
+		    echo '开始单元测试'
+		    sh "printf 5 > ${jobOutPath}/building_status.txt"
+		    sh "gradle clean test"
+		    
+		    afterSuccess('test', lastStep, jobOutPath, fullBinaryPath 
+		    	, incrementBinaryPath, fullBinaryRollbackPath)
+	    } catch (ex) {
+	        echo "单元测试出错, ${ex}"
+	        sendFailNotify("${jobOutPath}", "${ex}")
+	        writeError("${jobOutPath}", '单元测试', "${ex}")
+	        
+	        throw ex
+	    } finally {
+			// 清理构建
+			cleanBuild('test', lastStep, jobOutPath, buildPath)
+		}
+	} // if
+	
+	
+    if (stepBuild == '1' && lang == 'java') {
+	    try {
+	    	stage '编译'
+	    	echo '开始编译'
+			withEnv([
+				"buildPath=${buildPath}",
+				"buildId=${env.BUILD_ID}",
+				"jobSourcePath=${jobSourcePath}",
+				"jobOutPath=${jobOutPath}",
+				"fullBinaryPath=${fullBinaryPath}",
+				"fullBinaryRollbackPath=${fullBinaryRollbackPath}",
+				"fullSourcePath=${fullSourcePath}",
+				"dockerImagePath=${dockerImagePath}",
+				"incrementBinaryPath=${incrementBinaryPath}",
+				"incrementSourcePath=${incrementSourcePath}",
+				"changeLogPath=${changeLogPath}",
+				]) {
+			sh '''
+		
+			echo "build_id: $buildId "
+			echo "buildPath: $buildPath "
+			
+			printf 2 > $jobOutPath/building_status.txt
+			
+			# 最后一次成功编译id
+			lastSuccessId="0"
+			if [ -f "$jobOutPath/last_success_id.txt" ]; then
+				lastSuccessId=`cat $jobOutPath/last_success_id.txt`
+			fi
+			echo "lastSuccessId : $lastSuccessId"
+			
+			# 部署方式：0 docker镜像, 1 虚拟机
+			deployType="0"
+			# 部署url
+			deployUrl=""
+			if [ -f "$jobOutPath/project_info.txt" ]; then
+				projectConf=`cat $jobOutPath/project_info.txt`
+				deployType=${projectConf:0:1}
+				deployUrl=${projectConf##*;}
+				echo "deployType=$deployType, deployUrl=$deployUrl "
+				
+				if [ "$deployUrl" = "" ]; then
+					echo "部署url为空! "
+				fi
+			else
+				echo "得不到部署方式! "
+				exit 1
+			fi
+			
+			# 创建全量源码目录
+			echo "创建全量源码目录: $fullSourcePath "
+			mkdir -p "$fullSourcePath" 
+			
+			# 生成全量源码包
+			if [ -d $jobSourcePath ] && cd $fullSourcePath ; then
+				rm -rf *
+				cd $jobSourcePath
+			    echo "生成全量源码包: $fullSourcePath/all.zip "
+			    zip -qr $fullSourcePath/all.zip . -x *.svn*
+			else 
+				echo "$jobSourcePath目录不存在或更改目录失败!" 1>&2
+				exit 1
+			fi
+			
+			# docker镜像
+			if [ "$deployType" = "0" ]; then
+				echo "build docker image begin "
+				cd $buildPath
+				gradle clean
+				find $buildPath -type f -iname "Dockerfile"  | grep "src/main/docker" \
+				    	| awk -F '/' '{print $(NF-4)}'  \
+				    	| xargs -n1 -i gradle  {}:buildDocker -Pdocker -x test
+			
+				echo "build docker image end "
+				# 创建镜像文件目录
+				echo "创建镜像文件目录: $dockerImagePath "
+				mkdir -p "$dockerImagePath" 
+				
+				if cd $dockerImagePath ; then
+					rm -rf *
+				    echo "生成镜像文件包: $dockerImagePath/*"
+				    find $buildPath -type f -iname "Dockerfile" | grep "build/docker" \
+				    	| awk -F '/' '{print $(NF-3)}' | xargs -n1 -i docker save {} -o {}.tar
+				    	
+				else 
+					echo "更改目录失败!" 1>&2
+					exit 1
+				fi
+			else 	    	
+				echo "build VM tar"
+				cd $buildPath
+				gradle clean distTar -x test
+				
+				# 全量程序
+				# 创建全量程序目录
+				echo "创建全量程序目录: $fullBinaryPath "
+				mkdir -p "$fullBinaryPath" 
+				
+				# 生成全量程序包
+				if cd $fullBinaryPath ; then
+				    rm -rf *
+				    echo "生成全量程序包: $fullBinaryPath/*"
+				    find $buildPath -type f -name '*.tar' | xargs -i cp '{}' .
+				else
+				    echo "更改目录失败! " 1>&2
+				    exit 1
+				fi
+			fi
+			
+			'''
+			} // withEnv
+		
+			afterSuccess('build', lastStep, jobOutPath, fullBinaryPath 
+				, incrementBinaryPath, fullBinaryRollbackPath)
+		} catch (err2) {
+			echo "编译失败： ${err2} "
+			sendFailNotify("${jobOutPath}", "${err2}")
+			writeError("${jobOutPath}", '编译', "${err2}")
+			
+			throw err2
+		} finally {
+			// 清理构建
+			cleanBuild('build', lastStep, jobOutPath, buildPath)
+		}
+	} // if
+	
+    if (stepDeploy == '1') {
+	    try {
+			stage '部署'
+			withEnv([
+				"buildPath=${buildPath}",
+				"buildId=${env.BUILD_ID}",
+				"jobSourcePath=${jobSourcePath}",
+				"jobOutPath=${jobOutPath}",
+				"fullBinaryPath=${fullBinaryPath}",
+				"fullBinaryRollbackPath=${fullBinaryRollbackPath}",
+				"fullSourcePath=${fullSourcePath}",
+				"dockerImagePath=${dockerImagePath}",
+				"incrementBinaryPath=${incrementBinaryPath}",
+				"incrementSourcePath=${incrementSourcePath}",
+				"changeLogPath=${changeLogPath}",
+				]) {
+			sh '''
+			# echo 后面内容中有中文的最后加一个空格，不然中文会有乱码
+			echo "开始部署 "
+			
+			# 解压全量包或回滚全量包到增量处理的临时full目录
+			function unzipFullToIncrementBinaryPath {
+				local fullBinaryPath=$1
+				local buildId=$2
+				
+				# 创建增量中的临时全量目录
+				mkdir -p $incrementBinaryPath/full/$buildId
+				
+				mkdir -p $fullBinaryPath
+				cd $fullBinaryPath
+				
+				# 判断全量目录中是否有文件
+				if [ ! -z "`ls $fullBinaryPath`" ] ; then
+					echo "分别解压全量包中的所有tar包到增量处理的临时full目录 "
+					cp *.tar $incrementBinaryPath/full/$buildId
+					cd $incrementBinaryPath/full/$buildId
+					ls | grep tar | xargs -n1 tar -xvf
+					
+					cd $incrementBinaryPath/full/$buildId && rm -rf *.tar
+				fi
+			}
+			
+			# 最后一次成功编译id
+			lastSuccessId="0"
+			if [ -f "$jobOutPath/last_success_id.txt" ]; then
+				lastSuccessId=`cat $jobOutPath/last_success_id.txt`
+			fi
+			echo "lastSuccessId : $lastSuccessId"
+			
+			# 如果更改了.gradle文件，使用全量部署
+			for ((i=$lastSuccessId + 1; $lastSuccessId != "0" && i <= $buildId; i++))
+			do
+				echo "判断构建$i是否包含.gradle文件 "
+				changeLogFile="$changeLogPath/$i/changelog0.xml"
+				if [ -f $changeLogFile ] ; then
+					gradle_file=`cat $changeLogFile | grep -q "\\.gradle" && echo "1" || echo "0"`
+					
+					if [ "$gradle_file" = "1" ]; then
+						echo "构建$i有更改.gradle文件 "
+						rm -f $jobOutPath/last_success_id.txt
+						
+						echo "删除回滚文件 "
+						if [ -d $fullBinaryRollbackPath ] ; then
+							rm -rf $fullBinaryRollbackPath
+							mkdir -p $fullBinaryRollbackPath
+						fi
+						
+						lastSuccessId="0"
+						
+						break;
+					fi
+				fi
+			done
+			
+			echo "lastSuccessId2 : $lastSuccessId "
+			
+			# 部署方式：0 docker镜像, 1 虚拟机
+			deployType="0"
+			#语言: java, html
+			lang="";
+			# 部署url
+			deployUrl=""
+			# 上传部署包, 不为空表示通过部署包部署
+			workpath=""
+			if [ -f "$jobOutPath/project_info.txt" ]; then
+				projectConf=`cat $jobOutPath/project_info.txt`
+				OLD_IFS="$IFS" 
+				IFS=";" 
+				arr=($projectConf) 
+				IFS="$OLD_IFS"
+				deployType=${arr[0]}
+				lang=${arr[1]}
+				workpath=${arr[2]}
+				deployUrl=${arr[3]}
+				echo "deployType=$deployType, deployUrl=$deployUrl "
+				echo "lang=$lang, workpath=$workpath "
+				
+				if [ "$deployUrl" = "" ]; then
+					echo "部署url为空! "
+					exit 1
+				fi
+			else
+				echo "得不到部署方式! "
+				exit 1
+			fi
+			
+			# 只部署vm, 不部署镜像, 部署html
+			if [ "$deployType" = "1" ] || [ "$lang" = "html" ] || [ "$workpath" != "" ] ; then
+			
+				# 生成增量源码包，上传部署包方式 不生成增量源码包
+				if [ "$workpath" = "" ] ; then
+					echo "生成增量源码包 "
+					
+					# 创建增量源码目录
+					mkdir -p "$incrementSourcePath/$buildId" 
+					
+					echo "生成增量源码包: $incrementSourcePath/$buildId/all.zip"
+					for ((i=$lastSuccessId + 1; $lastSuccessId != "0" && i <= $buildId; i++))
+					do
+						changeLogFile="$changeLogPath/$i/changelog0.xml"
+						echo "复制增量源码: $i, log file: $changeLogFile "
+						if [ -f $changeLogFile ] && cd $jobSourcePath ; then
+							cat $changeLogFile | grep -Po 'localPath="[^"]*" kind="file"' \
+								| sed 's/localPath="//' \
+								| sed 's/" kind="file"//' \
+								| xargs -I {} bash -c 'if [ -e {} ] ; then echo {} ; fi' \
+								| xargs -i cp --parent '{}' $incrementSourcePath/$buildId
+						fi
+					done
+					
+					# 压缩增量源码
+					echo "压缩增量源码 "
+					files=`ls $incrementSourcePath/$buildId`
+					if [ ! -z "$files" ]; then
+						cd $incrementSourcePath/$buildId
+						zip -qr all.zip .
+						rm -rf `ls | grep -v "all.zip"`
+					fi
+				fi
+				
+				# 得到增量服务包,从svn拉代码的java程序才需要得到增量服务包
+				if [ "$lang" = "java" ] && [ "$workpath" = "" ] ; then
+					
+					echo "创建增量目录. "
+					mkdir -p $incrementBinaryPath/full/$buildId
+					mkdir -p $incrementBinaryPath/diff/$buildId
+					mkdir -p $incrementBinaryPath/increment/$buildId
+					
+					mkdir -p $incrementBinaryPath/mppacks/$buildId/diff
+					mkdir -p $incrementBinaryPath/mppacks/$buildId/files
+					
+					mkdir -p $incrementBinaryPath/incrementfiles
+					
+					echo "删除增量服务包目录中的文件 "
+					cd $incrementBinaryPath/incrementfiles && rm -rf *
+					
+					# 得到当前版本的临时全量, 主要是为从第2次编译起做增量比较用(不要移到下面的生成增量包部分)
+					echo "解压当前版本的全量包到增量处理的临时full目录. "
+					unzipFullToIncrementBinaryPath $fullBinaryPath $buildId
+					
+					echo "得到当前版本所有的项目jar包(不包含spring等依赖包)的清单文件, mppacks/$buildId/diff/all.txt "
+					cd $buildPath && ls -ltr | grep ^d | awk '{print $9 ".jar"}' \
+						| grep -v -e libs.jar -e gradle.jar -e deploy.jar -e image.jar -e conf.jar \
+						>  $incrementBinaryPath/mppacks/$buildId/diff/all.txt
+						
+					allpacks=""
+					for line in `cat $incrementBinaryPath/mppacks/$buildId/diff/all.txt`
+					do
+						allpacks="$allpacks -e $line"
+					done
+					echo "当前版本的所有的项目jar包(不含依赖包), allpacks : $allpacks "
+					
+					echo "复制当前版本所有项目的jar包(不含spring等依赖包)到 mppacks/$buildId 目录 "
+					cd $incrementBinaryPath/full/$buildId && find . -type f | grep $allpacks \
+						 | xargs -i cp -u '{}' $incrementBinaryPath/mppacks/$buildId/ --verbose
+							
+					echo "解压当前版本项目的jar包(不含spring等依赖包)到mppacks/$buildId/files目录 "
+					cd $incrementBinaryPath/mppacks/$buildId && ls | grep jar \
+						| xargs -n1 -i unzip {} -d files/{} 
+						
+					cd $incrementBinaryPath/mppacks/$buildId && rm -rf *.jar
+					
+					mkdir -p $fullBinaryRollbackPath
+					
+					# 构建时点击了终止构建时，全量回滚目录可能为空(复制全量部署包目录到回滚全量目录失败)
+					if [ "$lastSuccessId" = "0" ] || [ -z "`ls $fullBinaryRollbackPath`" ]; then
+						echo "全量编译,不生成增量部署包 "
+					else 
+						echo "生成增量部署包 "
+						
+						# 得到增量包, 比较当前版本和最后一次成功部署版本
+						
+						mkdir -p "$incrementBinaryPath/mppacks/$lastSuccessId/files" 
+						
+						echo "得到当前版本所有项目的jar包(不含依赖包)中所有解压后文件的md5值, mppacks/$buildId/diff/new.md5 "
+						cd $incrementBinaryPath/mppacks/$buildId/files \
+							&& find . -type f -exec md5sum -b {} \\; \
+							> $incrementBinaryPath/mppacks/$buildId/diff/new.md5
+						
+						echo "得到最后一次成功部署版本的所有项目的jar包(不含依赖包)中所有解压后文件的md5值, mppacks/$lastSuccessId/diff/old.md5 "
+						# 最后一次成功部署版本的所有项目jar包解压后的文件会保留到当前版本，不会被删除
+						cd $incrementBinaryPath/mppacks/$lastSuccessId/files \
+							&& find . -type f -exec md5sum -b {} \\; \
+							> $incrementBinaryPath/mppacks/$buildId/diff/old.md5
+							
+						# 有可能项目的jar包中class内容没变化，但MANIFEST.MF文件每次编译都不相同(不论有没有更改，项目jar包内容都不同)
+						echo "比较当前版本和最后一次成功部署版本的项目的jar包(不含依赖包)解压后文件，得到更改过的jar包的清单文件, mppacks/$buildId/diff/modify.txt "
+						cd $incrementBinaryPath/mppacks/$buildId/files \
+							&& diff -n ../diff/old.md5 ../diff/new.md5 \
+							| grep -v 'MANIFEST.MF' \
+							| awk '{print $2}' | grep / | sed 's/^*//' \
+							| awk -F '/' '{print $(2)}' \
+							| sort \
+							| uniq \
+							 > $incrementBinaryPath/mppacks/$buildId/diff/modify.txt
+							 
+						modifypacks=""
+						for line in `cat $incrementBinaryPath/mppacks/$buildId/diff/modify.txt`
+						do
+							modifypacks="$modifypacks -e $line"
+						done
+						echo "有更改的项目jar包(不含依赖包), modifypacks : $modifypacks "	 
+						
+						echo "得到没更改的项目的jar包 "
+						if [ "$modifypacks" = "" ]; then
+							echo "项目的jar包都没有更改 "
+							cd $incrementBinaryPath/mppacks/$buildId/diff && cat all.txt \
+								> $incrementBinaryPath/mppacks/$buildId/diff/same.txt
+						else 
+							cd $incrementBinaryPath/mppacks/$buildId/diff \
+								&& grep -v $modifypacks all.txt \
+								> $incrementBinaryPath/mppacks/$buildId/diff/same.txt
+						fi
+								
+						echo "得到要排除的项目jar包(没更改的项目jar包) "
+						excludepacks=""
+						for line in `cat $incrementBinaryPath/mppacks/$buildId/diff/same.txt`
+						do
+							excludepacks="$excludepacks -e $line"
+						done
+						echo "要排除的项目jar包(没更改的项目jar包) excludepacks : $excludepacks "
+				
+						echo "生成当前版本部署包中所有文件(包含bin、conf、lib)的md5值, diff/$buildId/new.md5 "
+						cd $incrementBinaryPath/full/$buildId \
+							&& find . -type f -exec md5sum -b {} \\; \
+							> $incrementBinaryPath/diff/$buildId/new.md5
+							
+						echo "解压最后一次成功部署版本的全量tar包到增量处理的临时full目录 "
+						unzipFullToIncrementBinaryPath $fullBinaryRollbackPath $lastSuccessId
+						
+						echo "生成最后一次成功部署版本部署包中所有文件(包含bin、conf、lib)的md5值, diff/$buildId/old.md5 "
+						cd $incrementBinaryPath/full/$lastSuccessId \
+							&& find . -type f -exec md5sum -b {} \\; \
+							> $incrementBinaryPath/diff/$buildId/old.md5
+						
+						echo "比较两个版本的文件内容的差异(排除没更改的项目jar包), 得到tar部署包中更改过的程序文件(包含bin、conf、lib) "
+						if [ "$excludepacks" = "" ]; then
+							echo "所有的项目jar包都有更改 "	
+							cd $incrementBinaryPath/full/$buildId && \
+								diff -n ../../diff/$buildId/old.md5 ../../diff/$buildId/new.md5 \
+								 | awk '{print $2}' | grep / | sed 's/^*//' \
+								 | xargs -i cp --parent '{}' $incrementBinaryPath/increment/$buildId/ 
+						else 
+							cd $incrementBinaryPath/full/$buildId && \
+								diff -n ../../diff/$buildId/old.md5 ../../diff/$buildId/new.md5 \
+								 | awk '{print $2}' | grep / | sed 's/^*//' \
+								 | grep -v $excludepacks \
+								 | xargs -i cp --parent '{}' $incrementBinaryPath/increment/$buildId/ 
+						fi
+					  	
+					  	echo "分别压缩各项目更改过的文件，得到各服务的增量部署包，压缩所有更改得到增量的下载包all.zip "
+					  	files=`ls $incrementBinaryPath/increment/$buildId`
+						if [ ! -z "$files" ]; then
+							cd $incrementBinaryPath/increment/$buildId
+							zip -qr all.zip .
+							
+							# 分别压缩各服务，每个服务对应一个目录
+							subdir=`ls -ltr | grep ^d | awk '{printf $9" "}'`
+							for dt in $subdir  
+							do  
+								echo "压缩增量服务包到增量部署包目录: ${dt}.tar "
+								tar -cf $incrementBinaryPath/incrementfiles/${dt}.tar $dt  
+							done
+							
+							echo "删除所有增量临时程序 "
+							rm -rf `ls | grep -v "all.zip"`
+						fi
+					fi
+				fi
+				
+				# 复制上传部署包到全量目录
+				if [ "$workpath" != "" ] && [ ! -z "`ls $workpath`" ] ; then
+					echo "复制上传部署包到全量目录: from $workpath to $fullBinaryPath "
+					mkdir -p "$fullBinaryPath" 
+					mkdir -p "$workpath"
+					cd $fullBinaryPath && rm -rf *
+					cp -R $workpath/. $fullBinaryPath
+				fi
+				
+				# 部署到VM
+				printf 3 > $jobOutPath/building_status.txt
+				cd $jobOutPath
+				
+				rm -f $jobOutPath/deploy_result.txt
+				rm -f $jobOutPath/deploy_wget.txt
+				
+				# 部署程序
+			    wget -t 1 -T 3600  -qb -O deploy_wget.txt "$deployUrl&randomId=$RANDOM"
+			    
+			    echo "得到部署结果 "
+			    for ((i=0; i<350; i++))
+				do
+				  if [ -f "$jobOutPath/deploy_result.txt" ]; then
+					break
+				  else 
+					sleep 10s
+				  fi
+				done
+			    
+			    #部署结果
+			    deployResult="0"
+				deployMsg=""
+				if [ -f "$jobOutPath/deploy_result.txt" ]; then
+					deployJson=`cat $jobOutPath/deploy_result.txt`
+					deployResult=${deployJson:0:1}
+					echo "deployResult=$deployResult, deployMsg=${deployJson:2}" 
+					if [ "$deployResult" = "0" ]; then
+						exit 1
+					fi
+				else
+					echo "得不到部署结果！"
+					exit 1
+				fi
+			fi
+			
+			'''
+			} // withEnv
+		
+			afterSuccess('deploy', lastStep, jobOutPath, fullBinaryPath 
+				, incrementBinaryPath, fullBinaryRollbackPath)
+		} catch (err2) {
+			echo "部署失败： ${err2} "
+			sendFailNotify("${jobOutPath}", "${err2}")
+			writeError("${jobOutPath}", '部署', "${err2}")
+			
+			throw err2
+		} finally {
+			// 清理构建
+			cleanBuild('deploy', lastStep, jobOutPath, buildPath)
+		}
+	} // if
+	
+}  // node
+
+
+// 构建开始前的处理
+def beforeBuild(jobOutPath, fullBinaryPath, fullBinaryRollbackPath) {
+	try {
+		withEnv([
+		"buildId=${env.BUILD_ID}",
+		"jobOutPath=${jobOutPath}",
+		"fullBinaryPath=${fullBinaryPath}",
+		"fullBinaryRollbackPath=${fullBinaryRollbackPath}",
+		]) {
+		sh '''
+		
+		# 如果进行了回滚操作，这次构建就做全量部署
+		if [ -f "$jobOutPath/rollback_begin.txt" ]; then
+			rm -f $jobOutPath/last_success_id.txt
+			
+			echo "删除回滚文件 "
+			if [ -d $fullBinaryRollbackPath ] ; then
+				rm -rf $fullBinaryRollbackPath
+				mkdir -p $fullBinaryRollbackPath
+			fi
+		fi
+		
+		# 删除回滚相关文件
+		rm -f $jobOutPath/rollback_begin.txt
+		rm -f $jobOutPath/rollback_result.txt
+		
+		# 写最后一次构建的部署环境
+		deployEnv="product"
+		if [ -f "$jobOutPath/deploy_env.txt" ]; then
+			deployEnv=`cat $jobOutPath/deploy_env.txt`
+		fi
+		echo $deployEnv > $jobOutPath/deploy_env_last.txt
+		
+		# 最后一次成功部署id
+		lastSuccessId="0"
+		if [ -f "$jobOutPath/last_success_id.txt" ]; then
+			lastSuccessId=`cat $jobOutPath/last_success_id.txt`
+		fi
+		echo "lastSuccessId : $lastSuccessId"
+		
+		# 如果上一次构建id等于最后成功的id(上一次构建成功)，备份全量程序(上一次构建的)用于部署失败后回滚
+		if [ "$lastSuccessId" != "0" ]; then
+			let prevBuildId=$buildId-1
+			echo "prevBuildId : $prevBuildId"
+			if [ "$lastSuccessId" = "$prevBuildId" ] && [ -d "$fullBinaryPath" ] \
+				&& [ ! -z "`ls $fullBinaryPath`" ] ; then
+				echo "创建全量回滚程序目录: $fullBinaryRollbackPath "
+				
+				echo "创建全量回滚临时目录 "
+				fullBinaryRollbackPathTmp="${fullBinaryRollbackPath}_tmp"
+				mkdir -p "$fullBinaryRollbackPathTmp" 
+				cd $fullBinaryRollbackPathTmp && rm -rf *
+				
+				# 复制全量包到回滚目录，可能在复制过程中点击了终止构建，回滚目录中的tar包可能不完整，
+				# 下次增量比较时解压回滚tar包会出错， 先复制到回滚临时目录，再更改目录名为回滚目录
+				
+				echo "复制全量目录中文件到回滚临时目录 "
+				cp -R $fullBinaryPath/. $fullBinaryRollbackPathTmp
+				
+				echo "删除回滚目录 "
+				if [ -d $fullBinaryRollbackPath ] ; then
+					rm -rf $fullBinaryRollbackPath
+				fi 
+				
+				echo "复制回滚临时目录到回滚目录 "
+				mv $fullBinaryRollbackPathTmp $fullBinaryRollbackPath
+				
+				echo "删除回滚临时目录 "
+				rm -rf $fullBinaryRollbackPathTmp
+			fi
+		fi
+		
+		'''	
+		}
+	} catch(err) {
+		echo "beforeBuild出错： ${err} "
+		sendFailNotify("${jobOutPath}", "${err}")
+		throw err
+	} 
+}
+
+// 构建成功后的处理
+def afterSuccess(step, lastStep, jobOutPath, fullBinaryPath 
+	, incrementBinaryPath, fullBinaryRollbackPath) {
+	echo "afterSuccess begin ..step = ${step}, lastStep = ${lastStep}"
+	try {
+		withEnv([
+		"buildId=${env.BUILD_ID}",
+		"step=${step}",
+		"lastStep=${lastStep}",
+		"jobOutPath=${jobOutPath}",
+		"fullBinaryPath=${fullBinaryPath}",
+		"incrementBinaryPath=${incrementBinaryPath}",
+		"fullBinaryRollbackPath=${fullBinaryRollbackPath}",
+		]) {
+		sh '''
+		
+		# 构建的最后步骤
+		if [ "$step" = "$lastStep" ]; then
+			if [ "$step" = "build" ] || [ "$step" = "deploy" ]; then
+				echo "删除增量处理中的临时全量程序 "
+				
+				# 删除所有的临时全量
+				if cd $incrementBinaryPath ; then
+					echo "删除 $incrementBinaryPath/full 目录 "
+					rm -rf $incrementBinaryPath/full
+				fi
+						
+				# 删除mppacks目录, 保留当前版本的mppacks目录用于和下次编译比较(得到增量程序)	
+				if cd $incrementBinaryPath/mppacks ; then
+					subdir=`ls -ltr | grep ^d | awk '{printf $9" "}'`  
+					
+					for dt in $subdir  
+					do  
+						cd $incrementBinaryPath/mppacks
+						files=`ls $dt`
+						if [ ! -z "$files" ]; then
+							tmpBuildId=$dt
+							echo "tmpBuildId: $tmpBuildId "
+							
+							# 删除mppacks/$tmpBuildId/files目录，除了当前版本
+							if [ $tmpBuildId != $buildId ]; then
+								if cd $incrementBinaryPath/mppacks/$tmpBuildId ; then
+									echo "删除 $incrementBinaryPath/mppacks/$tmpBuildId/files 目录 "
+									rm -rf files
+								fi
+							fi
+						fi
+					done
+				fi
+			fi
+		fi
+		
+		# 有部署步骤(有选项)并且部署成功了，写最后成功的构建id
+		if [ "$step" = "deploy" ]; then
+			echo "写最后成功的构建id(last_success_id) "
+			echo $buildId > $jobOutPath/last_success_id.txt
+		fi
+			
+		'''	
+		}
+	} catch(err) {
+		echo "afterSuccess出错： ${err} "
+	} finally {
+		if (step == lastStep) 
+			sendSuccessNotify(jobOutPath)
+	}
+}
+
+// 构建成功或失败，clean构建
+def cleanBuild(step, lastStep, jobOutPath, buildPath) {
+	echo "cleanBuild begin ..step = ${step}, lastStep = ${lastStep}"
+	if (step == lastStep) {
+		try {
+			echo "clean build...step = $step"
+			
+			withEnv([
+			"buildPath=${buildPath}",
+			"jobOutPath=${jobOutPath}",
+			]) {
+			sh '''
+			
+			printf 0 > $jobOutPath/building_status.txt
+			
+			'''	
+			} // withEnv
+		} catch(err5) {
+			echo "cleanBuild： ${err5} "
+		}
+	} // if
+	
+	if (step == "test") {
+		try {
+			echo "copy test files..."
+			
+			withEnv([
+			"buildPath=${buildPath}",
+			"jobOutPath=${jobOutPath}",
+			]) {
+			sh '''
+			
+			testfiles="${jobOutPath}/testfiles"
+			if [ ! -d "$testfiles" ]; then 
+				echo "创建测试文件目录: $testfiles "
+				mkdir -p "$testfiles" 
+			fi
+			cd $buildPath
+			find . -type f  | grep "build/test-results/test" | grep -v 'binary' \
+				| xargs -i cp --parent '{}' $testfiles/
+			
+			'''	
+			} // withEnv
+		} catch(err5) {
+			echo "cleanBuild： ${err5} "
+		}
+	} // if
+}
+
+
+// 写构建错误信息到文件
+def writeError(jobOutPath, stepName, error) {
+	echo 'write build error...'
+	try {
+		writeFile file: "${jobOutPath}/build_error.txt", text: "${stepName};${error}"
+	} catch (ex) {
+		echo "写错误信息到文件时出错, ${ex}"
+	}
+}
+
+// 发送构建失败邮件和短信
+def sendSuccessNotify(jobOutPath) {
+	try {
+		withEnv([
+		"buildId=${env.BUILD_ID}",
+		"jobOutPath=${jobOutPath}",
+		]) {
+		sh '''
+			notifyInfo=`cat $jobOutPath/notify_info.txt`
+			cd $jobOutPath
+			wget -T 3600 -qb -O nofity_result.txt \
+				"$notifyInfo&version=$buildId&result=1&randomId=$RANDOM" > /dev/null
+		'''	
+		}
+	} catch(err) {
+		echo "sendSuccessNotify： ${err} "
+	}
+}
+
+// 发送构建失败邮件和短信
+def sendFailNotify(jobOutPath, err2) {
+	try {
+		withEnv([
+		"buildId=${env.BUILD_ID}",
+		"jobOutPath=${jobOutPath}",
+		"err2=${err2}",
+		]) {
+		sh '''
+			# 中止错误码143
+			if [ "$err2" = "hudson.AbortException: script returned exit code 143" ]; then
+				echo "中止构建 "
+			else 
+				notifyInfo=`cat $jobOutPath/notify_info.txt`
+				cd $jobOutPath
+				wget -T 3600 -qb -O nofity_result.txt \
+					"$notifyInfo&version=$buildId&result=0&randomId=$RANDOM" > /dev/null
+			fi
+		'''	
+		}
+	} catch(err3) {
+		echo "sendFailNotify： ${err3} "
+	}
+}
+
